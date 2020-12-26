@@ -21,7 +21,35 @@ ENCODING = 'utf8'
 # 'label' needs to be castable to str
 SEGMENT_DTYPE = [('start', np.float), ('end', np.float), ('label', object)]
 
+# SETUP MIDI IO, just pick the first port, what could go wrong?
+import mido
+import re
+midi_ports = mido.get_output_names()
+midi_port = midi_ports[0]
+for port in midi_ports:
+    if re.match('IAC',port) or re.match('LoopBe',port) :
+        midi_port = port
+outport = mido.open_output(midi_port)
+        
+midi_ports = mido.get_input_names()
+for port in midi_ports:
+    if re.match('IAC',port) or re.match('LoopBe',port) :
+        midi_port = port        
+inport = mido.open_input(midi_port)
 
+
+MIDI_CHANNEL = 11
+MIDI_NOTE = 36
+
+import threading
+NOTE_LENGTH = 0.25
+
+def note_off():
+    outport.send(mido.Message('note_off', note=MIDI_NOTE, channel=MIDI_CHANNEL))
+    
+def note_on():  
+    outport.send(mido.Message('note_on', note=MIDI_NOTE, channel=MIDI_CHANNEL))
+                           
 # overwrite the built-in open() to transparently apply some magic file handling
 @contextlib.contextmanager
 def open_file(filename, mode='r'):
@@ -117,6 +145,13 @@ def write_events(events, filename, fmt='%.3f', delimiter='\t', header=None):
                 string = e
             except TypeError:
                 string = fmt % e
+
+            # midi IO here
+            note_on()
+            
+            note_off_timer = threading.Timer(NOTE_LENGTH, note_off)
+            note_off_timer.start()
+            
             f.write(bytes((string + '\n').encode(ENCODING)))
             f.flush()
 
@@ -283,7 +318,7 @@ def write_notes(notes, filename, fmt=None, delimiter='\t', header=None):
         fmt = ['%.3f', '%d', '%.3f', '%d']
     if not notes.ndim == 2:
         raise ValueError('unknown format for `notes`')
-    # truncate format to the number of columns given
+    # truncate format to the number of colums given
     fmt = delimiter.join(fmt[:notes.shape[1]])
     # write the notes
     write_events(notes, filename, fmt=fmt, delimiter=delimiter, header=header)

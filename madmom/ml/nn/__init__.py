@@ -35,6 +35,8 @@ def average_predictions(predictions):
     if len(predictions) > 1:
         # average the predictions
         predictions = sum(predictions) / len(predictions)
+        if predictions.shape == (1, 2):
+            predictions = np.array([predictions[0][1]])           
     else:
         # nothing to average since we have only one prediction
         predictions = predictions[0]
@@ -157,7 +159,6 @@ class NeuralNetworkEnsemble(SequentialProcessor):
     @classmethod
     def load(cls, nn_files, **kwargs):
         """
-        Instantiate a new Neural Network ensemble from a list of files.
 
         Parameters
         ----------

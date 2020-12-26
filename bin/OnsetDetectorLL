@@ -72,6 +72,14 @@ def main():
     # version
     p.add_argument('--version', action='version',
                    version='OnsetDetectorLL.2016')
+    p.add_argument('--channel', action='store',
+                   dest='channel',default=11,type=int)
+    p.add_argument('--note', action='store',
+                   dest='note',default=36,type=int)
+    p.add_argument('--note_length', action='store',
+                   dest='note_length',default=0.25,type=float)
+    p.add_argument('--pk_model', action='store_true',
+                   dest='pk_model',default=False)                    
     # input/output options
     io_arguments(p, output_suffix='.onsets.txt', online=True)
     ActivationsProcessor.add_arguments(p)
@@ -101,6 +109,10 @@ def main():
     else:
         # use a RNN to predict the onsets
         in_processor = RNNOnsetProcessor(**vars(args))
+        if args.pk_model:
+           print("Using PK Model")
+           from madmom.models import ONSETS_RNNPK
+           in_processor.nn_files = ONSETS_RNNPK
 
     # output processor
     if args.save:
@@ -110,6 +122,11 @@ def main():
         # detect the onsets and output them
         peak_picking = OnsetPeakPickingProcessor(**vars(args))
         out_processor = [peak_picking, write_onsets]
+        
+    from madmom import io
+    io.MIDI_NOTE=args.note
+    io.MIDI_CHANNEL=args.channel
+    io.NOTE_LENGTH=args.note_length
 
     # create an IOProcessor
     processor = IOProcessor(in_processor, out_processor)

@@ -122,7 +122,7 @@ class RecurrentLayer(FeedForwardLayer):
         self._prev = self.init
 
     def __getstate__(self):
-        # copy everything to a picklable object
+        # copy everything to a pickleable object
         state = self.__dict__.copy()
         # do not pickle attributes needed for stateful processing
         state.pop('_prev', None)
@@ -183,6 +183,139 @@ class RecurrentLayer(FeedForwardLayer):
             self._prev = out[i]
         # return
         return out
+        
+class TfBasicRecurrentLayer(FeedForwardLayer):
+    """
+    Recurrent network layer.
+
+    Parameters
+    ----------
+    weights : numpy array, shape (num_inputs, num_hiddens)
+        Weights.
+    bias : scalar or numpy array, shape (num_hiddens,)
+        Bias.
+    recurrent_weights : numpy array, shape (num_hiddens, num_hiddens)
+        Recurrent weights.
+    activation_fn : numpy ufunc
+        Activation function.
+    init : numpy array, shape (num_hiddens,), optional
+        Initial state of hidden units.
+
+    """
+
+    def __init__(self, weights, bias, activation_fn,
+                 init=None):
+        super(TfBasicRecurrentLayer, self).__init__(weights, bias, activation_fn)
+        if init is None:
+            init = np.array([np.zeros(self.bias.size, dtype=NN_DTYPE)])
+        self.init = init
+        # attributes needed for stateful processing
+        self._prev = self.init
+
+    def __getstate__(self):
+        # copy everything to a pickleable object
+        state = self.__dict__.copy()
+        # do not pickle attributes needed for stateful processing
+        state.pop('_prev', None)
+        return state
+
+    def __setstate__(self, state):
+        # restore pickled instance attributes
+        self.__dict__.update(state)
+        # TODO: old models do not have the init attribute, thus create it
+        #       remove this initialisation code after updating the models
+        if not hasattr(self, 'init'):
+            self.init = np.array([np.zeros(self.bias.size, dtype=NN_DTYPE)])
+        # add non-pickled attributes needed for stateful processing
+        self._prev = self.init
+
+    def reset(self, init=None):
+        """
+        Reset the layer to its initial state.
+
+        Parameters
+        ----------
+        init : numpy array, shape (num_hiddens,), optional
+            Reset the hidden units to this initial state.
+
+        """
+        # reset previous time step to initial value
+        self._prev = init if init is not None else self.init
+
+    def activate(self, data, reset=False):
+        """
+        Activate the layer.
+
+        Parameters
+        ----------
+        data : numpy array, shape (num_frames, num_inputs)
+            Activate with this data.
+        reset : bool, optional
+            Reset the layer to its initial state before activating it.
+
+        Returns
+        -------
+        numpy array, shape (num_frames, num_hiddens)
+            Activations for this data.
+
+        """
+        # reset layer to initial state
+        if reset:
+            self.reset()
+        
+        tf_input_and_state_concatenated = np.concatenate([data,self._prev],axis=1)
+        out =  self.activation_fn(np.dot(tf_input_and_state_concatenated,self.weights)+self.bias)         
+        self._prev = out
+        
+        # return
+        return out        
+
+# Zag
+class BadTfRecurrentLayer(RecurrentLayer):
+    """
+    Zag
+
+    """
+
+    def __init__(self, weights, bias, recurrent_weights, activation_fn,
+                 init=None):
+        super(TfRecurrentLayer, self).__init__(weights, bias, recurrent_weights,
+                                   activation_fn=activation_fn)
+
+    def activate(self, data, reset=True):
+        """
+        Activate the layer.
+
+        Parameters
+        ----------
+        data : numpy array, shape (num_frames, num_inputs)
+            Activate with this data.
+        reset : bool, optional
+            Reset the layer to its initial state before activating it.
+
+        Returns
+        -------
+        numpy array, shape (num_frames, num_hiddens)
+            Activations for this data.
+
+        """
+        # reset layer to initial state
+        if reset:
+            self.reset()
+        # weight input and add bias
+        #out = np.dot(data, self.weights) + self.bias
+        out = np.dot(data, self.weights)
+        # loop through all time steps
+        for i in range(len(data)):
+            # add weighted previous step
+            out[i] += (np.dot(self._prev, self.recurrent_weights) + self.bias) 
+            # apply activation function
+            out[i] = self.activation_fn(out[i])
+            # set reference to current output
+            self._prev = out[i]
+        # return
+        return out
+
 
 
 class BidirectionalLayer(Layer):
@@ -361,7 +494,7 @@ class LSTMLayer(RecurrentLayer):
         self._state = self.cell_init
 
     def __getstate__(self):
-        # copy everything to a picklable object
+        # copy everything to a pickleable object
         state = self.__dict__.copy()
         # do not pickle attributes needed for stateful processing
         state.pop('_prev', None)
@@ -561,7 +694,7 @@ class GRULayer(RecurrentLayer):
         self._prev = self.init
 
     def __getstate__(self):
-        # copy everything to a picklable object
+        # copy everything to a pickleable object
         state = self.__dict__.copy()
         # do not pickle attributes needed for stateful processing
         state.pop('_prev', None)
@@ -661,7 +794,6 @@ def _kernel_margins(kernel_shape, margin_shift):
     start_x, end_x, start_y, end_y : tuple
         Indices determining the valid part of the convolution output.
     """
-
     start_x = int(np.floor(kernel_shape[0] / 2.))
     start_y = int(np.floor(kernel_shape[1] / 2.))
 
@@ -672,8 +804,6 @@ def _kernel_margins(kernel_shape, margin_shift):
         end_x -= margin_shift
     else:
         end_x = start_x
-    start_x = start_x if start_x > 0 else None
-    end_x = -end_x if end_x > 0 else None
 
     if kernel_shape[1] % 2 == 0:
         end_y = start_y - 1
@@ -681,10 +811,8 @@ def _kernel_margins(kernel_shape, margin_shift):
         end_y -= margin_shift
     else:
         end_y = start_y
-    start_y = start_y if start_y > 0 else None
-    end_y = -end_y if end_y > 0 else None
 
-    return start_x, end_x, start_y, end_y
+    return start_x, -end_x, start_y, -end_y
 
 
 try:
@@ -1107,6 +1235,7 @@ class PadLayer(Layer):
         for a in self.axes:
             shape[a] += self.width * 2
             data_idxs[a] = slice(self.width, -self.width)
-        data_padded = np.full(tuple(shape), self.value)
-        data_padded[tuple(data_idxs)] = data
+        data_padded = np.empty(tuple(shape))
+        data_padded[:] = self.value
+        data_padded[data_idxs] = data
         return data_padded
