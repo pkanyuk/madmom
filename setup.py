@@ -27,8 +27,6 @@ extensions = [
               include_dirs=include_dirs),
     Extension('madmom.ml.hmm', ['madmom/ml/hmm.pyx'],
               include_dirs=include_dirs),
-    Extension('madmom.ml.nn.layers', ['madmom/ml/nn/layers.py'],
-              include_dirs=include_dirs),
 ]
 
 # define scripts to be installed by the PyPI package
